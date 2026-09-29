@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.5.3
+// @version      2.5.5
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -2827,8 +2827,9 @@ body.${BODY_CLASS} #${PANEL_ID} .sapMPanelContent > :not(#${OVERVIEW_ID}) { disp
                 p + '%</text></svg>';
         }
 
+        // cele minuty, zaokruhlene NADOL - rovnako ako v karte SAP casy
         function zaokruhli(n) {
-            return String(Math.round(n * 100) / 100);
+            return String(Math.floor(Math.max(0, n)));
         }
 
         function casKarta(label, conf, plan) {
@@ -5292,8 +5293,11 @@ body.${BODY_CLASS} .pda-3d:hover { transform:none !important; }
   font-family:-apple-system,"Segoe UI",Roboto,sans-serif; }
 .nd-pct .c { display:block; font-size:22px; font-weight:800; color:#13315c; line-height:1; }
 .nd-pct .h { display:block; font-size:11px; color:#4a6285; margin-top:3px; }
-.nd-legenda { display:flex; gap:14px; justify-content:center; margin-top:8px;
+/* Hotovo a Zostava vzdy pod sebou, nie vedla seba */
+.nd-legenda { display:flex; flex-direction:column; flex-wrap:nowrap; align-items:flex-start;
+  gap:4px; width:fit-content; margin:8px auto 0;
   font:12px/1.2 -apple-system,"Segoe UI",Roboto,sans-serif; color:#4a6285; }
+.nd-legenda > span { white-space:nowrap; }
 .nd-legenda i { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:middle; }
 .nd-legenda .a i { background:#2b7fe0; }
 .nd-legenda .b i { background:#c9d4e2; }
@@ -5607,9 +5611,9 @@ body.${BODY_CLASS} #__pda_hf_menu__ .hf-btn .n { font-size:14px !important; }
             return isNaN(n) ? 0 : n;
         }
 
-        // max. dve desatinne miesta, bez zbytocnych nul
+        // cele minuty, zaokruhlene NADOL (424.97 -> 424); zaporne cislo nikdy nevznikne
         function minTxt(n) {
-            return String(Math.round(n * 100) / 100);
+            return String(Math.floor(Math.max(0, n)));
         }
 
         function percentaKolacov() {
@@ -5979,10 +5983,16 @@ ${B} ${CASY} .nd-pct { z-index:2 !important; transform:translate(-50%, calc(-50%
 ${B} ${CASY} .nd-pct .c { font-size:calc(clamp(110px, 10.5vw, 180px) * .145) !important; font-weight:800 !important; }
 ${B} ${CASY} .nd-pct .h { display:block !important; font-size:max(9px, calc(clamp(110px, 10.5vw, 180px) * .07)) !important;
   margin-top:2px !important; }
-/* legenda pod kolacom */
-${B} ${CASY} .nd-legenda { display:flex !important; order:4 !important; flex-wrap:wrap !important;
-  gap:6px 16px !important; justify-content:center !important; margin-top:2px !important;
+/* Legenda pod kolacom: Hotovo a Zostava su VZDY pod sebou, nikdy vedla seba
+   (flex-direction:column), aj keby sa do sirky pohodlne zmestili. Riadky su
+   zarovnane vlavo, aby bodky boli presne pod sebou, a cely blok je v strede karty. */
+${B} ${CASY} .nd-legenda { display:flex !important; order:4 !important;
+  flex-direction:column !important; flex-wrap:nowrap !important;
+  align-items:flex-start !important; justify-content:flex-start !important;
+  gap:4px !important; width:-moz-fit-content !important; width:fit-content !important;
+  margin:2px auto 0 !important;
   font-size:12px !important; font-weight:600 !important; color:#2a3d5c !important; }
+${B} ${CASY} .nd-legenda > span { white-space:nowrap !important; }
 ${B} ${CASY} .nd-legenda i { width:11px !important; height:11px !important; }
 /* hotova cast koláča je zelena - bodka v legende rovnako */
 ${B} ${CASY} .nd-legenda .a i { background:#2fa65a !important; }
