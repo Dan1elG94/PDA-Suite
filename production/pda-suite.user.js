@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.5.1
+// @version      2.5.3
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -3936,7 +3936,8 @@ ${DIALOG_SEL} .pda-col-material { min-width:330px !important; }
  * Cervena #e53935 je rovnaka, aka sa pouziva inde v skripte.
  */
 .pda-aktivita .sapMBtn { border-radius:10px !important; box-shadow:none !important;
-  margin:0 !important; }
+  margin:0 !important; height:auto !important; min-height:0 !important; max-height:100% !important;
+  align-self:center !important; box-sizing:border-box !important; }
 .pda-aktivita .sapMBtn .sapMBtnInner { border-radius:10px !important; padding:7px 18px !important;
   background:#e53935 !important; background-image:none !important;
   border:1px solid #e53935 !important;
@@ -5233,10 +5234,18 @@ body.${BODY_CLASS} #WorkcenterDetail--SimpleForm_FlexBox { grid-column:1 !import
 body.${BODY_CLASS} #WorkcenterDetail--SimpleForm_FlexBox #__pda_opis_button__ { height:100% !important;
   margin:0 !important; max-width:none !important; box-sizing:border-box !important; align-content:start !important; }
 body.${BODY_CLASS} #WorkcenterDetail--Order_Info_Buttons_FlexBox { grid-column:2 !important; grid-row:2 !important;
-  width:100% !important; height:100% !important; margin:0 !important; min-width:0 !important; }
+  width:100% !important; height:auto !important; min-height:100% !important; margin:0 !important;
+  min-width:0 !important; overflow:visible !important; }
+/*
+ * Karta paralelnych procesov je v mriezke vedla karty "Popis operacie".
+ * Mala tu pevnu height:100% + overflow:hidden, takze ked bola susedna karta
+ * nizsia, zoznam sa orezal na jej vysku a tlacidlu Zastavit sa odstrihol spodok.
+ * min-height:100% kartu stale roztiahne na vysku riadku, ale ked obsah potrebuje
+ * viac miesta, karta sa zvacsi namiesto toho, aby ho odrezala.
+ */
 body.${BODY_CLASS} #WorkcenterDetail--Order_Info_Buttons_FlexBox .sapMList { background:#fff !important;
   border:1px solid #e3ebf5 !important; border-radius:16px !important; box-shadow:0 4px 14px rgba(16,36,63,.06) !important;
-  height:100% !important; box-sizing:border-box !important; overflow:hidden !important; }
+  height:auto !important; min-height:100% !important; box-sizing:border-box !important; overflow:visible !important; }
 /* rovnaky nadpis ako .nd-nadpis ("SAP casy"). Dolezity je line-height:
    SAP dava hlavicke zoznamu vysoky pevny riadok (3rem), takze aj po
    height:auto ostal nadpis opticky zapichnuty v prazdnom pase. */
@@ -5984,7 +5993,9 @@ ${B} ${SEKCIA} .sapMList { background:var(--nd-karta) !important; -webkit-backdr
 /* jedna polozka = biela karta (namiesto zelenej plochy) */
 ${B} ${ZOZNAM} .sapMLIB, ${B} ${ZOZNAM} .pda-aktivita { background:var(--nd-vnutro) !important;
   border:1px solid var(--nd-okraj) !important; border-radius:14px !important;
-  box-shadow:0 2px 10px rgba(16,36,63,.06) !important; padding:10px 14px !important; margin:0 0 8px !important; }
+  box-shadow:0 2px 10px rgba(16,36,63,.06) !important; padding:10px 14px !important; margin:0 0 8px !important;
+  /* karta nesmie orezavat svoj obsah - inak sa tlacidlu Zastavit odstrihne spodok aj s tienom */
+  height:auto !important; min-height:0 !important; overflow:visible !important; }
 ${B} ${ZOZNAM} .sapMLIB:last-child { margin-bottom:0 !important; }
 /* ikona pred textom + dva riadky: stav tucne, meno pod nim */
 ${B} ${ZOZNAM} [id^="WorkcenterDetail--Title_FlexBox-"] { display:grid !important;
@@ -6005,12 +6016,22 @@ ${B} ${ZOZNAM} [id^="WorkcenterDetail--Title_FlexBox-"] > * { margin:0 !importan
 ${B} ${ZOZNAM} [id^="WorkcenterDetail--Timer_Label-"] { font-size:22px !important; font-weight:800 !important;
   color:#13315c !important; letter-spacing:.02em !important; }
 ${B} ${ZOZNAM} [id^="WorkcenterDetail--Timer_FlexBox-"] { align-items:center !important; gap:16px !important; }
-/* Zastavit: cervene tlacidlo (len vzhlad - je to stale tlacidlo appky) */
+/* Zastavit: cervene tlacidlo (len vzhlad - je to stale tlacidlo appky).
+   Vyska je pevna (36 px) a navyse obmedzena na vysku riadku, v ktorom tlacidlo stoji:
+   appka si na <button> pise vlastnu vysku a vnutro s velkym padding-om z nej vytekalo,
+   takze spodok cervenej plochy bol orezany kartou. */
+${B} ${ZOZNAM} .sapMBtn { height:auto !important; min-height:0 !important; max-height:100% !important;
+  align-self:center !important; margin:0 !important; padding:0 !important;
+  box-sizing:border-box !important; }
 ${B} ${ZOZNAM} .sapMBtn .sapMBtnInner { background:linear-gradient(180deg,#e8453c 0%,#cc2b25 100%) !important;
-  border:0 !important; border-radius:12px !important; padding:10px 20px !important;
-  box-shadow:0 5px 14px rgba(204,43,37,.32) !important; height:auto !important; }
+  border:0 !important; border-radius:12px !important; padding:0 20px !important;
+  box-shadow:0 5px 14px rgba(204,43,37,.32) !important;
+  height:36px !important; min-height:0 !important; max-height:100% !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  line-height:1 !important; box-sizing:border-box !important; }
 ${B} ${ZOZNAM} .sapMBtn .sapMBtnContent, ${B} ${ZOZNAM} .sapMBtn bdi,
-${B} ${ZOZNAM} .sapMBtn .sapUiIcon { color:#fff !important; font-weight:800 !important; font-size:15px !important; }
+${B} ${ZOZNAM} .sapMBtn .sapUiIcon { color:#fff !important; font-weight:800 !important; font-size:15px !important;
+  line-height:1 !important; }
 
 /* ================= HLAVICKY: pas cez CELU sirku karty (posledne pravidla) =================
    Vseobecne pravidlo pre .nd-nadpis pas neroztiahlo vsade: pri Dokumentacii ho
