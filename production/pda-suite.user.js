@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.5.0
+// @version      2.5.1
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -5585,8 +5585,22 @@ body.${BODY_CLASS} #__pda_hf_menu__ .hf-btn .n { font-size:14px !important; }
         function sekundy(t) {
             t = String(t || '').trim();
             if (/:/.test(t)) return t.split(':').map(Number).reduce((a, b) => a * 60 + (isNaN(b) ? 0 : b), 0);
-            const n = parseFloat(t.replace(',', '.'));
+            const n = parseFloat(t.replace(/\s/g, '').replace(',', '.'));
             return isNaN(n) ? 0 : n;
+        }
+
+        // ten isty udaj v MINUTACH: "1612.65 / 3560 min" je uz v minutach,
+        // "00:00:00 / 01:40:00" treba zo sekund predelit 60
+        function minuty(t) {
+            t = String(t || '').trim();
+            if (/:/.test(t)) return sekundy(t) / 60;
+            const n = parseFloat(t.replace(/\s/g, '').replace(',', '.'));
+            return isNaN(n) ? 0 : n;
+        }
+
+        // max. dve desatinne miesta, bez zbytocnych nul
+        function minTxt(n) {
+            return String(Math.round(n * 100) / 100);
         }
 
         function percentaKolacov() {
@@ -5598,7 +5612,10 @@ body.${BODY_CLASS} #__pda_hf_menu__ .hf-btn .n { font-size:14px !important; }
                 const hotovo = sekundy(casti[0]);
                 const plan = sekundy(casti[1]);
                 const pct = plan > 0 ? Math.round(hotovo / plan * 100) : 0;
-                const zostava = Math.max(0, 100 - pct);
+                // do legendy idu minuty (percento ostava v strede kolaca)
+                const hotovoMin = minuty(casti[0]);
+                const planMin = minuty(casti[1]);
+                const zostavaMin = Math.max(0, planMin - hotovoMin);
 
                 const box = text.closest('.sapMVBox') || text.closest('.sapMFlexBox') || text.parentElement;
                 if (!box) return;
@@ -5639,7 +5656,8 @@ body.${BODY_CLASS} #__pda_hf_menu__ .hf-btn .n { font-size:14px !important; }
                     leg.appendChild(a); leg.appendChild(b);
                     box.appendChild(leg);
                 }
-                const ta = 'Hotovo ' + pct + '%', tb = 'Zostáva ' + zostava + '%';
+                const ta = 'Hotovo ' + minTxt(hotovoMin) + ' min';
+                const tb = 'Zostáva ' + minTxt(zostavaMin) + ' min';
                 const na = leg.querySelector('.a').lastChild, nb = leg.querySelector('.b').lastChild;
                 if (na.textContent !== ta) na.textContent = ta;
                 if (nb.textContent !== tb) nb.textContent = tb;
