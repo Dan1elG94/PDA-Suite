@@ -1,6 +1,7 @@
 # Sukromna dokumentacia a znalostna baza pre Claude - NIKDY nejde do GitHubu.
 # (obsahuje interne IP adresy, mena kolegov, pracovne postupy)
 .claude/
+CLAUDE-handover.md
 
 # Zaloha nastaveni - obsahuje osobne cisla ludi a heslo panela. NIKDY do verejneho repa.
 pda-suite-nastavenia*.json
@@ -10,3 +11,6 @@ pda-suite-nastavenia*.json
 *.log
 _na_server_*/
 *.tmp
+
+# Zaznamy DOM z aplikacie (mena kolegov, operatori, realne zakazky). NIKDY do verejneho repa.
+html/

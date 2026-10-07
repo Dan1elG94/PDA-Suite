@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.5.5
+// @version      2.6.0
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -367,6 +367,9 @@
      * ---------------------------------------------------------------- */
     const UserSwitch = (function () {
         const CHANGE_USER_SUFFIX = 'Button_ChangeUser';
+        // na prihlasovacej obrazovke otvara ten isty dialog (Popups--Dialog_CurrentUser)
+        // odkaz "Prihlasenie pomocou mena a hesla" - tlacidlo Zmena pouzivatela tam nie je
+        const LOGIN_LINK_ID = 'Login--Link';
         const USER_COMBO_ID = 'Popups--User_ComboBox';
         const PASSWORD_INPUT_ID = 'Popups--EmployeeNo_Input';
         const CONFIRM_BUTTON_ID = 'Popups--UserDialog_Button_close';
@@ -432,6 +435,17 @@
                 }
                 pressElement(btn);
                 fillLoginPopup(username, password);
+            },
+            // prihlasenie z prihlasovacej obrazovky - vracia Promise, aby citacka
+            // vedela, kedy pokus skoncil
+            fromLoginPage(username, password) {
+                const link = document.getElementById(LOGIN_LINK_ID);
+                if (!link) {
+                    console.warn(LOG, 'odkaz na prihlásenie menom a heslom sa nenašiel');
+                    return Promise.resolve();
+                }
+                pressElement(link);
+                return fillLoginPopup(username, password);
             },
             findByCardId(cardId) {
                 return settings.users.find((u) => u.cardId && u.cardId === cardId) || null;
@@ -1237,8 +1251,118 @@
         const HIDDEN_INPUT_ID = '__pda_hidden_scanner_input__';
         const CARD_ID_LENGTH = 10;
         const REFOCUS_INTERVAL = 1000;
+        const CHYBA_ID = '__pda_login_chyba__';
+        // karta = presne 10 znakov 0-9 a a-f po dekodovani (napr. 0116984be8)
+        const CARD_FORMAT = /^[0-9a-f]{10}$/i;
+        let prihlasujem = false;
+
+        /*
+         * Prihlasovacia obrazovka je view "Login". Ostatne view (Main, WorkcenterDetail)
+         * ostavaju v DOM aj po odhlaseni, len skryte cez sapMNavItemHidden - preto sa
+         * nestaci pytat, ci v DOM je tlacidlo Zmena pouzivatela (je tam, ale skryte).
+         */
+        function naPrihlasovacejObrazovke() {
+            const view = document.getElementById('Login');
+            return !!view && !view.classList.contains('sapMNavItemHidden') &&
+                !!document.getElementById('Login--Link');
+        }
+
+        function vycistiVstup() {
+            const input = document.getElementById(HIDDEN_INPUT_ID);
+            if (input) input.value = '';
+        }
+
+        function injectChybaStyles() {
+            if (document.getElementById(CHYBA_ID + 'styles')) return;
+            const st = document.createElement('style');
+            st.id = CHYBA_ID + 'styles';
+            st.textContent = `
+#${CHYBA_ID} { position:fixed; inset:0; background:rgba(10,20,40,.5); z-index:100003;
+  display:flex; align-items:center; justify-content:center; padding:24px; box-sizing:border-box; }
+#${CHYBA_ID} .karta { background:#fff; border-radius:16px; width:min(460px,92vw); overflow:hidden;
+  box-shadow:0 24px 70px rgba(16,36,63,.4); font-family:-apple-system,"Segoe UI",Roboto,sans-serif; }
+#${CHYBA_ID} .hl { padding:14px 18px; background:#b42318; color:#fff;
+  font-size:15px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+#${CHYBA_ID} .telo { padding:22px 20px 24px; font-size:15px; line-height:1.6; color:#17202e; text-align:center; }
+#${CHYBA_ID} .telo .velke { font-size:38px; display:block; margin-bottom:10px; }
+#${CHYBA_ID} .telo .co { font-size:18px; font-weight:800; color:#b42318; margin-bottom:6px; }
+#${CHYBA_ID} button.ok { margin-top:18px; padding:10px 34px; font-size:15px; font-weight:700;
+  border:0; border-radius:10px; background:#13315c; color:#fff; cursor:pointer;
+  box-shadow:0 2px 8px rgba(16,36,63,.22); }
+#${CHYBA_ID} button.ok:hover { background:#1c478a; }
+`;
+            document.head.appendChild(st);
+        }
+
+        function zobrazChybuPrihlasenia(dovod) {
+            injectChybaStyles();
+            vycistiVstup();
+            const stary = document.getElementById(CHYBA_ID);
+            if (stary) stary.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = CHYBA_ID;
+            const karta = document.createElement('div');
+            karta.className = 'karta';
+            const hl = document.createElement('div');
+            hl.className = 'hl';
+            hl.textContent = 'Prihlásenie sa nepodarilo';
+            const telo = document.createElement('div');
+            telo.className = 'telo';
+            const ik = document.createElement('span'); ik.className = 'velke'; ik.textContent = '⚠️';
+            const co = document.createElement('div'); co.className = 'co'; co.textContent = dovod;
+            const txt = document.createElement('div');
+            txt.textContent = 'Zopakujte pokus a priložte svoju osobnú kartičku.';
+            const ok = document.createElement('button');
+            ok.className = 'ok'; ok.type = 'button'; ok.textContent = 'OK';
+            telo.appendChild(ik); telo.appendChild(co); telo.appendChild(txt); telo.appendChild(ok);
+            karta.appendChild(hl); karta.appendChild(telo);
+            overlay.appendChild(karta);
+
+            const zavri = () => {
+                overlay.remove();
+                document.removeEventListener('keydown', naEsc);
+                vycistiVstup();
+                const input = document.getElementById(HIDDEN_INPUT_ID);
+                if (input) input.focus();
+            };
+            const naEsc = (e) => { if (e.key === 'Escape') zavri(); };
+            ok.addEventListener('click', zavri);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) zavri(); });
+            document.addEventListener('keydown', naEsc);
+            document.body.appendChild(overlay);
+        }
+
+        /*
+         * Na prihlasovacej obrazovke sa prijima LEN karta. Ciarovy kod zo skenera
+         * zacina markerom "J", takze sa da od karty odlisit este pred dekodovanim.
+         */
+        function spracujNaPrihlasovacejObrazovke(raw) {
+            const surove = raw.trim();
+            const decoded = decodeScannerInput(surove);
+            if (surove[0] === 'J' || !CARD_FORMAT.test(decoded)) {
+                console.warn(LOG, 'prihlásenie: nesprávny vstup z čítačky');
+                zobrazChybuPrihlasenia('Nesprávny vstup');
+                return;
+            }
+            const user = UserSwitch.findByCardId(decoded);
+            if (!user) {
+                console.warn(LOG, 'prihlásenie: karta nerozpoznaná, ID:', decoded);
+                zobrazChybuPrihlasenia('Neznámy užívateľ');
+                return;
+            }
+            if (prihlasujem) return; // predchadzajuci pokus este bezi
+            prihlasujem = true;
+            console.log(LOG, 'prihlásenie kartou:', user.username);
+            UserSwitch.fromLoginPage(user.username, user.password)
+                .finally(() => { prihlasujem = false; });
+        }
 
         function handleRawInput(raw) {
+            if (naPrihlasovacejObrazovke()) {
+                spracujNaPrihlasovacejObrazovke(raw);
+                return;
+            }
             const decoded = decodeScannerInput(raw);
 
             if (decoded.length === CARD_ID_LENGTH) {
@@ -6905,7 +7029,7 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
         {
             id: 'scanner',
             name: 'Čiarový skener a RFID karty',
-            desc: 'Číta skener aj čítačku kariet. Karta prepne používateľa, číslo zákazky sa vloží do vyhľadávania.',
+            desc: 'Číta skener aj čítačku kariet. Karta prepne používateľa (na prihlasovacej obrazovke ho prihlási), číslo zákazky sa vloží do vyhľadávania.',
             def: false,
             needs: 'Hardvér',
             run: modInputListener,

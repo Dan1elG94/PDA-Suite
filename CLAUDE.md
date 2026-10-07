@@ -1,4 +1,4 @@
 # PDA Suite — HF Slovakia
 
-Pokyny pre Claude a celá dokumentácia projektu sú v **`.claude/CLAUDE.md`** — prečítaj ho ako prvé.
-Priečinok `.claude/` je súkromný (`.gitignore`) a nikdy sa nepushuje na GitHub.
+Pokyny pre Claude a celá dokumentácia projektu sú v **`CLAUDE-handover.md`** (koreň repozitára) — prečítaj ho ako prvé.
+Ten súbor aj priečinok `.claude/` sú súkromné (`.gitignore`) a nikdy sa nepushujú na GitHub.
