@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.1
+// @version      2.7.2
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -6967,8 +6967,8 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
     padding:0 !important; box-sizing:border-box !important; } /* 14px odstup od laveho stlpca tu netreba */
   ${B} #__pda_left_box_graf__ { order:3 !important; margin:0 !important; }
   /* zoznam zakaziek inak siaha po spodok okna (JS fitHeight) - pod sebou by zabral
-     celu obrazovku, preto ma pevnu polovicu vysky; inline vysku z JS prebije !important */
-  ${B} #WorkcenterDetail--WorkList_ScrollContainer { height:50vh !important; min-height:260px !important; }
+     celu obrazovku, preto ma pevnu vysku 260 px (2.7.2); inline vysku z JS prebije !important */
+  ${B} #WorkcenterDetail--WorkList_ScrollContainer { height:260px !important; min-height:0 !important; }
   /* mriezka pod Dokumentaciou: jeden stlpec, poradie ako pri citani na PC */
   ${B} #WorkcenterDetail--OrderDetails_FlexBox.nd-detail-grid { grid-template-columns:minmax(0,1fr) !important;
     grid-template-rows:none !important; }
