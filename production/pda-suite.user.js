@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.0
+// @version      2.7.1
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -6949,6 +6949,34 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
 #__pda_3j_nacitanie__ > .sapUiLocalBusyIndicator { position:absolute !important; left:0 !important; top:0 !important;
   right:auto !important; bottom:auto !important; width:0 !important; height:0 !important;
   background:transparent !important; border-radius:0 !important; opacity:1 !important; }
+
+/* ================= TABLET: detail zakazky v jednom stlpci (2.7.1) =================
+   Do sirky 1100 px (iPad na vysku) su vsetky karty detailu pod sebou na plnu sirku:
+   Pracovny zoznam, Stav operacie, Dokumentacia, Zakazka a material, SAP casy,
+   Popis operacie, Paralelne procesy a na konci Prehlad zdrojov. PC sa nemeni.
+   Lavy stlpec (#LeftColumn_FlexBox) dostane display:contents - jeho dva boxy
+   (zoznam a graf) sa tak stanu priamymi polozkami riadku a graf sa da cez
+   "order" posunut az na koniec, za pravy stlpec. */
+@media (max-width:1100px) {
+  ${B} #WorkcenterDetail--Worklist_FlexBox { flex-direction:column !important; flex-wrap:nowrap !important;
+    align-items:stretch !important; gap:12px !important; height:auto !important; }
+  ${B} #WorkcenterDetail--LeftColumn_FlexBox { display:contents !important; }
+  ${B} #__pda_left_box_zoznam__ { order:1 !important; margin:0 !important; }
+  ${B} #WorkcenterDetail--Order_FlexBox { order:2 !important; flex:0 0 auto !important;
+    width:100% !important; max-width:none !important; margin:0 !important;
+    padding:0 !important; box-sizing:border-box !important; } /* 14px odstup od laveho stlpca tu netreba */
+  ${B} #__pda_left_box_graf__ { order:3 !important; margin:0 !important; }
+  /* zoznam zakaziek inak siaha po spodok okna (JS fitHeight) - pod sebou by zabral
+     celu obrazovku, preto ma pevnu polovicu vysky; inline vysku z JS prebije !important */
+  ${B} #WorkcenterDetail--WorkList_ScrollContainer { height:50vh !important; min-height:260px !important; }
+  /* mriezka pod Dokumentaciou: jeden stlpec, poradie ako pri citani na PC */
+  ${B} #WorkcenterDetail--OrderDetails_FlexBox.nd-detail-grid { grid-template-columns:minmax(0,1fr) !important;
+    grid-template-rows:none !important; }
+  ${B} #WorkcenterDetail--Main_SimpleForm { grid-column:1 !important; grid-row:1 !important; }
+  ${B} #WorkcenterDetail--TimerCharts_FlexBox { grid-column:1 !important; grid-row:2 !important; }
+  ${B} #WorkcenterDetail--SimpleForm_FlexBox { grid-column:1 !important; grid-row:3 !important; height:auto !important; }
+  ${B} #WorkcenterDetail--Order_Info_Buttons_FlexBox { grid-column:1 !important; grid-row:4 !important; min-height:0 !important; }
+}
 `;
             document.head.appendChild(st);
         }
