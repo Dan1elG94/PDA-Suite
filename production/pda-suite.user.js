@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.6.0
+// @version      2.7.0
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -1429,6 +1429,307 @@
             input.focus();
             setInterval(() => ensureFocus(input), REFOCUS_INTERVAL);
         });
+    }
+
+    /* --------------- 3.6.1 Skener ciarovych kodov kamerou (tablet) --------------- */
+
+    /*
+     * Pre tablet bez fyzickej citacky. Na obrazovke Pracoviska prida vedla pola
+     * "Cislo zakazky / material" tlacidlo SCANNER; to otvori okno so zadnou kamerou.
+     * Po nacitani PRVEHO kodu sa okno zavrie, kamera vypne a kod ide do vyhladavania
+     * presne tak, ako ked ho napise fyzicky skener (decodeScannerInput + padOperationPart).
+     *
+     * Na sprievodke je Code 39, napr. *J1602005165.20* -> obsah "J1602005165.20"
+     * -> "1602005165-0020". Kamera cita skutocny obsah kodu, takze slovenska klavesnica
+     * (ľšč...) tu nehra rolu - dekodovanie cisla len prepusti.
+     *
+     * Preco nie kniznica html5-qrcode (Jarov recept): jej dekoder ZXing realnu fotku
+     * sprievodky neprecital vobec (sedy papier, nizky kontrast) - az po zvyseni
+     * kontrastu. Code 39 je jednoduchy, preto je tu vlastny dekoder s prahom
+     * z okolia: precita aj tu fotku, otocenu, v tieni, mensiu aj mierne sikmu.
+     * Kod sa prijme az ked ho precitaju 2 riadky obrazu rovnako (ochrana pred omylom).
+     * Kamera potrebuje HTTPS; PDA na hf.simplifier.cloud ho ma.
+     */
+    function modCameraScanner() {
+        const TLACIDLO_ID = '__pda_kamera_btn__';
+        const OKNO_ID = '__pda_kamera_okno__';
+        const STYLE_ID = '__pda_kamera_styles__';
+        const TOOLBAR_SEL = '#__pda_custom_search_ui__ .sapMListInfoTBar';
+        const INTERVAL = 100;        // ms medzi snimkami
+        const RIADKOV = 15;          // kolko riadkov obrazu sa cita v kazdej snimke
+        const PAS_OD = 0.3, PAS_DO = 0.7; // citany pas = stredny ramik v okne
+
+        // Code 39: 9 prvkov (ciara, medzera, ciara...), 3 siroke. Bit 1 = siroky prvok.
+        // Tabulka je prevzata zo ZXing (Code39Reader.CHARACTER_ENCODINGS).
+        const KOD39_ZNAKY = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%*';
+        const KOD39_VZORY = [
+            0x034, 0x121, 0x061, 0x160, 0x031, 0x130, 0x070, 0x025, 0x124, 0x064,
+            0x109, 0x049, 0x148, 0x019, 0x118, 0x058, 0x00D, 0x10C, 0x04C, 0x01C,
+            0x103, 0x043, 0x142, 0x013, 0x112, 0x052, 0x007, 0x106, 0x046, 0x016,
+            0x181, 0x0C1, 0x1C0, 0x091, 0x190, 0x0D0, 0x085, 0x184, 0x0C4, 0x0A8,
+            0x0A2, 0x08A, 0x02A, 0x094,
+        ];
+
+        // 9 sirok prvkov -> znak alebo null. Siroke = 3 najsirsie, musia byt zretelne sirsie.
+        function znak39(povodne) {
+            // tlac a rozmazanie robia ciary hrubsie a medzery tensie. Kazdy znak ma aspon
+            // jednu uzku ciaru aj medzeru, takze rozdiel najuzsej ciary a medzery = tento posun
+            let minC = Infinity, minM = Infinity;
+            for (let i = 0; i < 9; i++) {
+                if (i % 2 === 0) minC = Math.min(minC, povodne[i]); else minM = Math.min(minM, povodne[i]);
+            }
+            const posun = (minC - minM) / 2;
+            const sirky = povodne.map((x, i) => (i % 2 === 0 ? x - posun : x + posun));
+            const zoradene = sirky.slice().sort((a, b) => b - a);
+            const prah = (zoradene[2] + zoradene[3]) / 2;
+            if (zoradene[2] < zoradene[3] * 1.3) return null;
+            let vzor = 0;
+            for (let i = 0; i < 9; i++) vzor = (vzor << 1) | (sirky[i] > prah ? 1 : 0);
+            const i = KOD39_VZORY.indexOf(vzor);
+            return i === -1 ? null : KOD39_ZNAKY[i];
+        }
+
+        /*
+         * Jeden riadok obrazu (jas 0-255) -> obsah kodu alebo null.
+         * Prah sa pocita z okolia (klzavy priemer), nie z celeho obrazu - preto
+         * nevadi nerovnomerne svetlo ani sedy papier. Odtial "nizky kontrast",
+         * na ktorom zlyhavala kniznica html5-qrcode (ZXing).
+         */
+        function citajRiadok39(jas) {
+            const n = jas.length;
+            let min = 255, max = 0;
+            for (let i = 0; i < n; i++) { if (jas[i] < min) min = jas[i]; if (jas[i] > max) max = jas[i]; }
+            if (max - min < 40) return null; // v riadku nic nie je
+            const okno = Math.max(15, Math.floor(n / 16));
+            const hyst = (max - min) * 0.04;
+            const stred = (min + max) / 2;
+            // klzavy priemer cez prefixove sucty
+            const sucet = new Float64Array(n + 1);
+            for (let i = 0; i < n; i++) sucet[i + 1] = sucet[i] + jas[i];
+            // hrany so subpixelovou presnostou (linearna interpolacia priechodu cez prah)
+            const behy = []; // [tmavy?, sirka]
+            let tmavy = jas[0] < stred;
+            let hrana = 0;
+            let predPrah = jas[0];
+            for (let i = 1; i < n; i++) {
+                const a = Math.max(0, i - okno), b = Math.min(n, i + okno);
+                // priemer z okolia, ale nie nad stred celeho riadku: inak by pri ostrej
+                // hrane (biely stol vedla sedeho papiera) aj papier vysiel ako "tmavy"
+                const prah = Math.min((sucet[b] - sucet[a]) / (b - a), stred);
+                const novy = tmavy ? !(jas[i] > prah + hyst) : jas[i] < prah - hyst;
+                if (novy !== tmavy) {
+                    // hladaj presny priechod medzi i-1 a i (pripadne o pixel skor kvoli hysterezii)
+                    let j = i, d0 = jas[i - 1] - predPrah, d1 = jas[i] - prah;
+                    if (d0 * d1 > 0 && i > 1) { j = i - 1; d1 = d0; d0 = jas[i - 2] - predPrah; }
+                    const t = d0 !== d1 ? d0 / (d0 - d1) : 0.5;
+                    const x = Math.min(Math.max(j - 1 + t, hrana), i);
+                    behy.push([tmavy, x - hrana]);
+                    tmavy = novy; hrana = x;
+                }
+                predPrah = prah;
+            }
+            behy.push([tmavy, n - hrana]);
+            return dekodujBehy(behy) || dekodujBehy(behy.slice().reverse());
+        }
+
+        function dekodujBehy(behy) {
+            for (let s = 0; s + 9 <= behy.length; s++) {
+                if (!behy[s][0]) continue;
+                const sirky = behy.slice(s, s + 9).map((x) => x[1]);
+                if (znak39(sirky) !== '*') continue;
+                const sirkaZnaku = sirky.reduce((a, b) => a + b, 0);
+                let text = '';
+                let p = s + 10; // za '*' je medzera medzi znakmi
+                while (p + 9 <= behy.length) {
+                    const medzera = behy[p - 1][1];
+                    if (medzera > sirkaZnaku / 3) break; // prilis velka diera = koniec kodu
+                    const w = behy.slice(p, p + 9).map((x) => x[1]);
+                    const sucetW = w.reduce((a, b) => a + b, 0);
+                    if (sucetW < sirkaZnaku * 0.7 || sucetW > sirkaZnaku * 1.3) break; // ina velkost = nie nas kod
+                    const z = znak39(w);
+                    if (z === null) break;
+                    if (z === '*') { if (text.length >= 4) return text; break; }
+                    text += z;
+                    p += 10;
+                }
+            }
+            return null;
+        }
+
+        let stream = null;
+        let casovac = null;
+        let hotovo = false;
+        let predosly = null;
+
+        function injectStyles() {
+            if (document.getElementById(STYLE_ID)) return;
+            const st = document.createElement('style');
+            st.id = STYLE_ID;
+            st.textContent = `
+#${TLACIDLO_ID} { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto;
+  margin-left:12px; height:40px; padding:0 20px; border:0; border-radius:20px;
+  background:#13315c; color:#fff; font:inherit; font-size:15px; font-weight:800;
+  letter-spacing:.06em; cursor:pointer; box-shadow:0 2px 8px rgba(16,36,63,.22); }
+#${TLACIDLO_ID}:hover { background:#1c478a; }
+#${TLACIDLO_ID} svg { width:20px; height:20px; flex:0 0 auto; }
+
+#${OKNO_ID} { position:fixed; inset:0; background:rgba(10,20,40,.6); z-index:100003;
+  display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; }
+#${OKNO_ID} .karta { background:#fff; border-radius:16px; width:min(720px,96vw); overflow:hidden;
+  box-shadow:0 24px 70px rgba(16,36,63,.4); font-family:-apple-system,"Segoe UI",Roboto,sans-serif; }
+#${OKNO_ID} .hl { display:flex; align-items:center; padding:14px 18px; background:#13315c; color:#fff;
+  font-size:15px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+#${OKNO_ID} .hl .x { margin-left:auto; background:none; border:0; color:#fff; font-size:28px;
+  line-height:1; cursor:pointer; padding:0 4px; }
+#${OKNO_ID} .obraz { position:relative; background:#000; line-height:0; overflow:hidden; }
+#${OKNO_ID} video { display:block; width:100%; height:auto; min-height:200px; }
+/* ramik = pas, ktory sa naozaj cita (PAS_OD az PAS_DO vysky obrazu) */
+#${OKNO_ID} .ramik { position:absolute; left:4%; right:4%; top:30%; bottom:30%;
+  border:3px solid rgba(255,255,255,.9); border-radius:10px; box-shadow:0 0 0 2000px rgba(0,0,0,.28); }
+#${OKNO_ID} .ramik::after { content:''; position:absolute; left:0; right:0; top:50%; height:2px;
+  background:#e5484d; box-shadow:0 0 8px #e5484d; }
+#${OKNO_ID} .info { padding:14px 18px 18px; font-size:15px; line-height:1.5; color:#17202e; text-align:center; }
+#${OKNO_ID} .info.chyba { color:#b42318; font-weight:700; }
+`;
+            document.head.appendChild(st);
+        }
+
+        function ikonaKamery() {
+            return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+                'stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/>' +
+                '<path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/>' +
+                '<path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>';
+        }
+
+        // tlacidlo SCANNER do panela Vyhladat zakazku (ten je len na obrazovke Pracoviska)
+        function apply() {
+            const toolbar = document.querySelector(TOOLBAR_SEL);
+            if (!toolbar || document.getElementById(TLACIDLO_ID)) return;
+            injectStyles();
+            const btn = document.createElement('button');
+            btn.id = TLACIDLO_ID;
+            btn.type = 'button';
+            btn.innerHTML = ikonaKamery() + '<span>SCANNER</span>';
+            btn.addEventListener('click', otvorSkener);
+            toolbar.appendChild(btn);
+        }
+
+        function info(text, jeChyba) {
+            const el = document.querySelector('#' + OKNO_ID + ' .info');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.toggle('chyba', !!jeChyba);
+        }
+
+        function zastavKameru() {
+            clearTimeout(casovac);
+            casovac = null;
+            if (stream) stream.getTracks().forEach((t) => t.stop());
+            stream = null;
+        }
+
+        function zavriOkno() {
+            zastavKameru();
+            const okno = document.getElementById(OKNO_ID);
+            if (okno) okno.remove();
+        }
+
+        // jedna snimka: precita RIADKOV riadkov zo stredneho pasu, kazdy ako priemer 3 susednych
+        function citajSnimku(video, platno, ctx) {
+            const w = video.videoWidth, h = video.videoHeight;
+            if (!w || !h) return null;
+            const y0 = Math.floor(h * PAS_OD), vyska = Math.floor(h * (PAS_DO - PAS_OD));
+            if (platno.width !== w || platno.height !== vyska) { platno.width = w; platno.height = vyska; }
+            ctx.drawImage(video, 0, y0, w, vyska, 0, 0, w, vyska);
+            const px = ctx.getImageData(0, 0, w, vyska).data;
+            const pocty = {};
+            const riadok = new Uint8Array(w);
+            for (let k = 0; k < RIADKOV; k++) {
+                const y = Math.min(vyska - 2, Math.max(1, Math.round((k + 0.5) * vyska / RIADKOV)));
+                for (let x = 0; x < w; x++) {
+                    let s = 0;
+                    for (let d = -1; d <= 1; d++) {
+                        const i = ((y + d) * w + x) * 4;
+                        s += px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+                    }
+                    riadok[x] = s / 3;
+                }
+                const text = citajRiadok39(riadok);
+                if (!text) continue;
+                pocty[text] = (pocty[text] || 0) + 1;
+                if (pocty[text] >= 2) return text; // 2 riadky sa zhoduju
+            }
+            // jeden riadok v tejto snimke + ten isty v predoslej snimke
+            const jediny = Object.keys(pocty)[0] || null;
+            if (jediny && jediny === predosly) return jediny;
+            predosly = jediny;
+            return null;
+        }
+
+        function naNacitanie(kod) {
+            hotovo = true;
+            console.log(LOG, 'kamera načítala kód:', kod);
+            zavriOkno();
+            const hodnota = padOperationPart(decodeScannerInput(kod));
+            if (typeof shared.fillSearchInput === 'function') {
+                shared.fillSearchInput(hodnota);
+            } else {
+                console.warn(LOG, 'modul vyhľadávania nebeží, zákazka nebola vložená');
+            }
+        }
+
+        async function otvorSkener() {
+            injectStyles();
+            zavriOkno();
+            hotovo = false;
+            predosly = null;
+
+            const okno = document.createElement('div');
+            okno.id = OKNO_ID;
+            okno.innerHTML =
+                '<div class="karta"><div class="hl"><span>Skener čiarového kódu</span>' +
+                '<button type="button" class="x" aria-label="Zavrieť">×</button></div>' +
+                '<div class="obraz"><video playsinline muted autoplay></video><div class="ramik"></div></div>' +
+                '<div class="info">Spúšťam kameru…</div></div>';
+            okno.querySelector('.x').addEventListener('click', zavriOkno);
+            okno.addEventListener('click', (e) => { if (e.target === okno) zavriOkno(); });
+            document.body.appendChild(okno);
+            const video = okno.querySelector('video');
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                info('Tento prehliadač nedovolí použiť kameru.', true);
+                return;
+            }
+            let s;
+            try {
+                s = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                });
+            } catch (e) {
+                console.warn(LOG, 'kameru sa nepodarilo spustiť', e);
+                info('Kameru sa nepodarilo spustiť. Povoľte prístup ku kamere a skúste to znova.', true);
+                return;
+            }
+            if (!document.body.contains(okno)) { s.getTracks().forEach((t) => t.stop()); return; } // medzitym zavreli
+            stream = s;
+            video.srcObject = s;
+            try { await video.play(); } catch (e) { /* autoplay - muted video by malo ist */ }
+            info('Čiarový kód zákazky dajte vodorovne do rámika.');
+
+            const platno = document.createElement('canvas');
+            const ctx = platno.getContext('2d', { willReadFrequently: true });
+            const krok = () => {
+                if (hotovo || stream !== s) return;
+                let kod = null;
+                try { kod = citajSnimku(video, platno, ctx); } catch (e) { console.warn(LOG, 'chyba pri čítaní snímky', e); }
+                if (kod) naNacitanie(kod);
+                else casovac = setTimeout(krok, INTERVAL);
+            };
+            krok();
+        }
+
+        DomWatch.add(apply);
     }
 
     /* ---------------------- 3.7 Tlacidlo vykresu ------------------------ */
@@ -7033,6 +7334,14 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
             def: false,
             needs: 'Hardvér',
             run: modInputListener,
+        },
+        {
+            id: 'cameraScanner',
+            name: 'Skener čiarových kódov kamerou (tablet)',
+            desc: 'Na obrazovke Pracoviská pridá tlačidlo SCANNER. Kód zákazky načítaný kamerou sa vloží do vyhľadávania ako z čítačky.',
+            def: false,
+            needs: 'Tablet s kamerou',
+            run: modCameraScanner,
         },
         {
             id: 'drawing',

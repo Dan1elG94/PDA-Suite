@@ -66,6 +66,7 @@ v sekcii *Heslo do nastavení*).
 | Blokovanie tlačidla Späť | zapnuté | zabráni nechcenému vypadnutiu z aplikácie |
 | Panel prepínania používateľov | vypnuté | má zmysel len na zdieľanom termináli |
 | Čiarový skener a RFID karty | vypnuté | vyžaduje hardvér |
+| Skener čiarových kódov kamerou (tablet) | vypnuté | na tablete bez čítačky: tlačidlo SCANNER na obrazovke Pracoviská, kód zákazky načítaný kamerou ide do vyhľadávania |
 | Tlačidlo výkresu | vypnuté | vyžaduje firemnú sieť a Excel so zoznamom výkresov |
 | Ľavý panel na celú výšku | vypnuté | ⚠️ rozpracované, zatiaľ rozhadzuje rozloženie |
 | Ladiaci výpis do konzoly | vypnuté | len na hľadanie chýb |
