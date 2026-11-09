@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.3
+// @version      2.7.4
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -6961,7 +6961,7 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
   ${B} #WorkcenterDetail--Worklist_FlexBox { flex-direction:column !important; flex-wrap:nowrap !important;
     align-items:stretch !important; gap:12px !important; height:auto !important; }
   ${B} #WorkcenterDetail--LeftColumn_FlexBox { display:contents !important; }
-  ${B} #__pda_left_box_zoznam__ { order:1 !important; margin:0 !important; }
+  ${B} #__pda_left_box_zoznam__ { display:none !important; } /* 2.7.4: pracovny zoznam na tablete skryty */
   ${B} #WorkcenterDetail--Order_FlexBox { order:2 !important; flex:0 0 auto !important;
     width:100% !important; max-width:none !important; margin:0 !important;
     padding:0 !important; box-sizing:border-box !important; } /* 14px odstup od laveho stlpca tu netreba */
