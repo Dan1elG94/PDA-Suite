@@ -64,6 +64,7 @@ v sekcii *Heslo do nastavení*).
 | Krajšia tabuľka stavov | zapnuté | krátky dátum a čas, stav ako farebná pilulka, striedavo podfarbené riadky |
 | Menu HF Slovakia (vpravo) | zapnuté | zvislý panel s pripravovanými funkciami (CHIPS, majster, materiál, TOOLSHOP, Flexus); je v detaile pracoviska aj na úvodnej obrazovke, dá sa schovať pásikom |
 | Blokovanie tlačidla Späť | zapnuté | zabráni nechcenému vypadnutiu z aplikácie |
+| Zobrazenie pracovného zoznamu na zákazke | zapnuté | na tablete zobrazuje pracovný zoznam na detaile zákazky; po vypnutí sa na tablete schová, na PC sa zobrazuje vždy |
 | Panel prepínania používateľov | vypnuté | má zmysel len na zdieľanom termináli |
 | Čiarový skener a RFID karty | vypnuté | vyžaduje hardvér |
 | Skener čiarových kódov kamerou (tablet) | vypnuté | na tablete bez čítačky: tlačidlo SCANNER na obrazovke Pracoviská, kód zákazky načítaný kamerou ide do vyhľadávania |

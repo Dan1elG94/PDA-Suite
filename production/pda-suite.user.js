@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.4
+// @version      2.7.5
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -6961,7 +6961,10 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
   ${B} #WorkcenterDetail--Worklist_FlexBox { flex-direction:column !important; flex-wrap:nowrap !important;
     align-items:stretch !important; gap:12px !important; height:auto !important; }
   ${B} #WorkcenterDetail--LeftColumn_FlexBox { display:contents !important; }
-  ${B} #__pda_left_box_zoznam__ { display:none !important; } /* 2.7.4: pracovny zoznam na tablete skryty */
+  ${B} #__pda_left_box_zoznam__ { order:1 !important; margin:0 !important; }
+  /* modul "Zobrazenie pracovneho zoznamu na zakazke": ked je vypnuty (body nema
+     triedu pda-zoznam-on), zoznam sa na tablete skryje. Zapnuty (default) = viditelny. (2.7.5) */
+  ${B}:not(.pda-zoznam-on) #__pda_left_box_zoznam__ { display:none !important; }
   ${B} #WorkcenterDetail--Order_FlexBox { order:2 !important; flex:0 0 auto !important;
     width:100% !important; max-width:none !important; margin:0 !important;
     padding:0 !important; box-sizing:border-box !important; } /* 14px odstup od laveho stlpca tu netreba */
@@ -7313,6 +7316,24 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
         });
     }
 
+    /* ------- 3.22 Zobrazenie pracovneho zoznamu na zakazke (tablet) ------- */
+
+    /*
+     * Na tablete (media query do 1400 px vo vzhladHF) je pracovny zoznam na detaile
+     * zakazky skryty, POKIAL body nema triedu pda-zoznam-on. Tento modul tu triedu
+     * pridava, takze ked bezi (zapnuty = default), zoznam je viditelny; po vypnuti
+     * modul nebezi, trieda chyba a CSS zoznam na tablete skryje. Na PC (nad 1400 px)
+     * sa zoznam zobrazuje vzdy. Triedu treba pridavat v kazdom tiku DomWatch, lebo
+     * UI5 pri prekresleni prepisuje atribut class (rovnako to robi modNewDesign s pda-nd).
+     */
+    function modWorkListOnOrder() {
+        const CLASS = 'pda-zoznam-on';
+        function apply() {
+            if (!document.body.classList.contains(CLASS)) document.body.classList.add(CLASS);
+        }
+        DomWatch.add(apply);
+    }
+
     /* ========================================================================
      *  4. ZOZNAM MODULOV
      *     Nove vylepsenie = napisat funkciu vyssie a pridat sem jeden riadok.
@@ -7448,6 +7469,13 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
             desc: 'Prezlečenie celej aplikácie: pozadie HF, polopriehľadné karty s tmavomodrým rámom a jednotnými hlavičkami, farebné oblasti pracovísk, SAP časy ako priestorové koláče, paralelné procesy ako karty, Dokumentácia ako dlaždice, jednotný vzhľad okien aplikácie a prihlasovacej stránky, pätka. Všetky pôvodné ovládacie prvky ostávajú — menia sa len farby a tvary.',
             def: true,
             run: modNewDesign,
+        },
+        {
+            id: 'workListOnOrder',
+            name: 'Zobrazenie pracovného zoznamu na zákazke',
+            desc: 'Na tablete (úzka obrazovka) zobrazuje pracovný zoznam na detaile zákazky. Po vypnutí sa zoznam na tablete schová. Na PC sa zoznam zobrazuje vždy.',
+            def: true,
+            run: modWorkListOnOrder,
         },
         {
             id: 'debug',
