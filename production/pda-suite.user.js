@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.2
+// @version      2.7.3
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -6951,13 +6951,13 @@ ${B} .sapUiLocalBusyIndicator:not(.pda-3j-busy):not(.sapMDialog *):not(.sapMPopo
   background:transparent !important; border-radius:0 !important; opacity:1 !important; }
 
 /* ================= TABLET: detail zakazky v jednom stlpci (2.7.1) =================
-   Do sirky 1100 px (iPad na vysku) su vsetky karty detailu pod sebou na plnu sirku:
+   Do sirky 1400 px (iPad na vysku aj nalezato) su vsetky karty detailu pod sebou na plnu sirku:
    Pracovny zoznam, Stav operacie, Dokumentacia, Zakazka a material, SAP casy,
    Popis operacie, Paralelne procesy a na konci Prehlad zdrojov. PC sa nemeni.
    Lavy stlpec (#LeftColumn_FlexBox) dostane display:contents - jeho dva boxy
    (zoznam a graf) sa tak stanu priamymi polozkami riadku a graf sa da cez
    "order" posunut az na koniec, za pravy stlpec. */
-@media (max-width:1100px) {
+@media (max-width:1400px) {
   ${B} #WorkcenterDetail--Worklist_FlexBox { flex-direction:column !important; flex-wrap:nowrap !important;
     align-items:stretch !important; gap:12px !important; height:auto !important; }
   ${B} #WorkcenterDetail--LeftColumn_FlexBox { display:contents !important; }
