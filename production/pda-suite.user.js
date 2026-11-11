@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.5
+// @version      2.8.0
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -361,6 +361,166 @@
     }
 
     /* ------------------------------------------------------------------
+     *  Priame prihlasenie pouzivatela (bez simulovania klikov).
+     *  Zopakuje presne to, co robi handler appky po OK v dialogu Zmena
+     *  pouzivatela - cez vlastne metody controllera appky:
+     *    1) getUserList            -> z mena zisti userId
+     *    2) SelectPasswordByUserId -> ulozeny hash hesla (connector PDA_MySQL)
+     *    3) hashUserPassword       -> overi heslo (pbkdf2, client BO)  [heslo sa realne kontroluje]
+     *    4) SelectAuthenticatedUserWithAreas -> prihlasi
+     *    5) setVar(oUser,sLanguage) + callCustomEvent('userSelected') -> appka dotiahne zvysok
+     *  Pouzitelne LEN v prihlasenej session (prepnutie pouzivatela). Na cerstvej
+     *  login page server PDA business objekty odmietne ("Missing permissions"),
+     *  preto sa tam pouziva povodny tok (fromLoginPage) - viď UserSwitch.
+     *  Vlastny overlay (nie sap BusyIndicator - ten si appka schova sama po prihlaseni)
+     *  drzi, kym nedobehne stahovanie zakaziek (getOperationListTempForWorkcenters).
+     * ---------------------------------------------------------------- */
+    const DirectLogin = (function () {
+        const GUID = 'ff43dba6-c73d-4d1a-ad96-f7727e44f14c';
+        const ORDERS_METHOD = 'getOperationListTempForWorkcenters';
+        const OVERLAY_ID = '__pda_login_overlay__';
+        const KF_ID = '__pda_login_overlay_kf__';
+        const HIDE_FALLBACK = 30000;   // poistka: overlay sa schova najneskor po tomto case
+        const SETTLE = 400;            // po dobehnuti stahovania zakaziek kratko pockaj
+
+        let ctrl = null;
+        let userMap = null;            // cache: username -> userId
+        let overlayActive = false;
+        let inProgress = false;
+        let settleTimer = null;
+        let fallbackTimer = null;
+
+        // controller appky s potrebnymi metodami (hlada sa az pri prvom pouziti)
+        function findController() {
+            if (ctrl && typeof ctrl.callBusinessObject === 'function') return ctrl;
+            ctrl = null;
+            try {
+                W.sap.ui.core.Element.registry.forEach((el) => {
+                    if (ctrl || !el || typeof el.getController !== 'function') return;
+                    try {
+                        const x = el.getController();
+                        if (x && typeof x.callBusinessObject === 'function' &&
+                            typeof x.callConnectorCall === 'function' &&
+                            typeof x.callClientBusinessObject === 'function' &&
+                            typeof x.getGlobals === 'function' &&
+                            typeof x.callCustomEvent === 'function' &&
+                            typeof x.resolveConnectorResult === 'function') ctrl = x;
+                    } catch (e) { /* ignore */ }
+                });
+            } catch (e) { /* ignore */ }
+            return ctrl;
+        }
+
+        function pick(c, d, key) {
+            return c.resolveConnectorResult(
+                (d && typeof d === 'object' && typeof d.result === 'object' && d.result) ? d.result : d, key);
+        }
+
+        function showOverlay() {
+            if (!document.getElementById(KF_ID)) {
+                const st = document.createElement('style');
+                st.id = KF_ID;
+                st.textContent = '@keyframes __pdaspin{to{transform:rotate(360deg)}}';
+                document.head.appendChild(st);
+            }
+            const old = document.getElementById(OVERLAY_ID);
+            if (old) old.remove();
+            const ov = document.createElement('div');
+            ov.id = OVERLAY_ID;
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100010;display:flex;align-items:center;justify-content:center;' +
+                'background:rgba(10,20,40,.45);font-family:-apple-system,"Segoe UI",Roboto,sans-serif';
+            ov.innerHTML = '<div style="background:#fff;padding:22px 30px;border-radius:14px;box-shadow:0 10px 40px rgba(16,36,63,.35);' +
+                'display:flex;align-items:center;gap:16px;color:#13315c;font-weight:700;font-size:16px">' +
+                '<span style="width:26px;height:26px;border:3px solid #cfe0f5;border-top-color:#13315c;border-radius:50%;' +
+                'display:inline-block;animation:__pdaspin .8s linear infinite"></span>Prihlasujem a načítavam zákazky…</div>';
+            document.body.appendChild(ov);
+            overlayActive = true;
+            clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(hideOverlay, HIDE_FALLBACK);
+        }
+
+        function hideOverlay() {
+            overlayActive = false;
+            clearTimeout(settleTimer);
+            clearTimeout(fallbackTimer);
+            const ov = document.getElementById(OVERLAY_ID);
+            if (ov) ov.remove();
+        }
+
+        // po dobehnuti stahovania zakaziek schovaj overlay (s kratkym settle kvoli viacerym volaniam)
+        XhrBus.subscribe((ev) => {
+            if (!overlayActive) return;
+            if (!ev.request || ev.request.BOMethod !== ORDERS_METHOD) return;
+            clearTimeout(settleTimer);
+            settleTimer = setTimeout(hideOverlay, SETTLE);
+        });
+
+        function resolveUserId(c, username, cb) {
+            if (userMap && userMap[username] != null) { cb(userMap[username]); return; }
+            c.callBusinessObject('PDA', 'getUserList', {}, function (ud) {
+                const list = (ud && ud.result && ud.result.aUserList) || [];
+                userMap = {};
+                list.forEach((u) => { if (u && u.username != null) userMap[u.username] = u.id; });
+                cb(userMap[username]);
+            }, true, false, function () { cb(undefined); }, true);
+        }
+
+        /*
+         * Vracia Promise s vysledkom:
+         *   'ok'            - prihlaseny
+         *   'wrong-password'- heslo nesedi (zdroj: nastavenia) - NErobi sa zaloha
+         *   'fallback'      - priame volanie sa neda spustit (napr. bez controllera) -> klikaci tok
+         *   'error'         - server odmietol prihlasenie
+         *   'busy'          - ine prihlasenie uz bezi
+         */
+        function login(username, password) {
+            return new Promise((resolve) => {
+                if (inProgress) { resolve('busy'); return; }
+                const c = findController();
+                if (!c) { console.warn(LOG, 'priame prihlásenie: controller sa nenašiel, idem cez kliky'); resolve('fallback'); return; }
+                inProgress = true;
+                const done = (o) => { inProgress = false; resolve(o); };
+
+                resolveUserId(c, username, function (userId) {
+                    if (userId == null) { console.warn(LOG, 'priame prihlásenie: userId pre', username, 'sa nenašlo, idem cez kliky'); done('fallback'); return; }
+
+                    showOverlay();
+
+                    c.callConnectorCall('PDA_MySQL', 'SelectPasswordByUserId', GUID, { id: userId }, function (d1) {
+                        const stored = pick(c, d1, 'password');
+                        c.callClientBusinessObject('PDA_Chart', 'hashUserPassword',
+                            { sStoredPassword: stored, sPassword: password, iUserId: userId }, function (d2) {
+                                const valid = pick(c, d2, 'bPasswordValid');
+                                const empty = pick(c, d2, 'bPasswordEmpty');
+                                const hashed = pick(c, d2, 'sHashedPassword');
+                                if (!valid) { hideOverlay(); done('wrong-password'); return; }
+                                c.callBusinessObject('PDA', 'SelectAuthenticatedUserWithAreas',
+                                    { userId: userId, authenticated: valid, passwordEmpty: empty, pin: hashed }, function (d3) {
+                                        try {
+                                            const user = c.resolveConnectorResult(d3.result, 'user');
+                                            c.getGlobals().setVar('sLanguage', c.resolveConnectorResult(d3.result, 'user/language'));
+                                            c.getGlobals().setVar('oUser', user);
+                                            c.callCustomEvent('userSelected');
+                                            console.log(LOG, 'priame prihlásenie:', user && user.username);
+                                            done('ok');
+                                        } catch (e) {
+                                            console.warn(LOG, 'priame prihlásenie - chyba po úspechu', e);
+                                            hideOverlay(); done('error');
+                                        }
+                                    }, true, false, function (err) {
+                                        console.warn(LOG, 'SelectAuthenticatedUserWithAreas zlyhal', err && (err.message || err.statusCode));
+                                        hideOverlay(); done('error');
+                                    }, true);
+                            }, true, true, null, undefined);
+                    }, true, true, null, { variables: {}, autoFields: {}, screenItemProperties: {} });
+                });
+            });
+        }
+
+        return { login };
+    })();
+
+    /* ------------------------------------------------------------------
      *  Prepinanie pouzivatela - zdielana sluzba.
      *  Pouziva ju aj bocny panel, aj citacka kariet, takze je tu zvlast
      *  a nie je viazana na to, ci je panel zapnuty.
@@ -428,13 +588,23 @@
 
         return {
             to(username, password) {
-                const btn = document.querySelector('[id$="' + CHANGE_USER_SUFFIX + '"]');
-                if (!btn) {
-                    console.warn(LOG, 'tlacidlo na zmenu pouzivatela sa na obrazovke nenaslo');
-                    return;
-                }
-                pressElement(btn);
-                fillLoginPopup(username, password);
+                // priame prihlasenie (bez klikov); pri 'fallback' sa pouzije povodny klikaci tok
+                DirectLogin.login(username, password).then((outcome) => {
+                    if (outcome === 'ok' || outcome === 'error' || outcome === 'busy') return;
+                    if (outcome === 'wrong-password') {
+                        console.warn(LOG, 'priame prihlásenie: heslo nesedí pre', username,
+                            '- skontroluj heslo v nastaveniach používateľov');
+                        return;
+                    }
+                    // 'fallback' -> povodny tok cez simulovanie klikov
+                    const btn = document.querySelector('[id$="' + CHANGE_USER_SUFFIX + '"]');
+                    if (!btn) {
+                        console.warn(LOG, 'tlacidlo na zmenu pouzivatela sa na obrazovke nenaslo');
+                        return;
+                    }
+                    pressElement(btn);
+                    fillLoginPopup(username, password);
+                });
             },
             // prihlasenie z prihlasovacej obrazovky - vracia Promise, aby citacka
             // vedela, kedy pokus skoncil
