@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.6
+// @version      2.7.7
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -2206,7 +2206,7 @@
             } catch (e) {
                 if (token !== lookupToken) return;
                 console.warn(LOG, 'hľadanie výkresu zlyhalo', e);
-                updateDisplay(null);
+                updateDisplay({ source: 'chyba' });
             }
         }
 
@@ -2214,6 +2214,16 @@
             const valueEl = document.getElementById('__pda_order_drawing_value__');
             const revisionEl = document.getElementById('__pda_order_drawing_revision__');
             if (!valueEl || !revisionEl) return;
+
+            revisionEl.style.color = '';   // reset (chybovy stav pouziva cervenu)
+
+            if (info && info.source === 'chyba') {
+                currentDrawingInfo = null;
+                valueEl.textContent = '—';
+                revisionEl.textContent = 'služba neodpovedala';
+                revisionEl.style.color = '#b00';
+                return;
+            }
 
             if (!info) {
                 currentDrawingInfo = null;
@@ -2271,6 +2281,7 @@
                     method: 'GET',
                     url: settings.pdm.base + '/search?' + params,
                     headers: settings.pdm.key ? { 'X-API-Key': settings.pdm.key } : {},
+                    timeout: 15000,
                     onload: (response) => {
                         if (response.status < 200 || response.status >= 300) {
                             reject(new Error('Služba výkresov vrátila HTTP ' + response.status));
