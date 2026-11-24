@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.7
+// @version      2.7.8
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -446,6 +446,10 @@
                     return Promise.resolve();
                 }
                 pressElement(link);
+                return fillLoginPopup(username, password);
+            },
+            // dialog je uz otvoreny (napr. zdielane PC) - nic neklikame, len vyplnime a odoslame
+            fillOpenDialog(username, password) {
                 return fillLoginPopup(username, password);
             },
             findByCardId(cardId) {
@@ -1334,11 +1338,23 @@
             document.body.appendChild(overlay);
         }
 
+        // true, ked je uzivatelsky prihlasovaci dialog (Popups--Dialog_CurrentUser) uz
+        // otvoreny - napr. zdielane PC, kde prihlasenie visi rovno nad obrazovkou Main.
+        // Vtedy netreba nic klikat, dialog aj polia su pripravene.
+        function dialogOtvoreny() {
+            const dlg = document.getElementById('Popups--Dialog_CurrentUser');
+            return !!dlg && dlg.classList.contains('sapMDialogOpen') &&
+                !!document.getElementById('Popups--User_ComboBox-inner') &&
+                !!document.getElementById('Popups--EmployeeNo_Input-inner');
+        }
+
         /*
-         * Na prihlasovacej obrazovke sa prijima LEN karta. Ciarovy kod zo skenera
+         * Prihlasenie kartou: dekoduje vstup, overi tvar karty a znameho pouzivatela,
+         * a potom zavola loginFn - ta spravi samotne prihlasenie (bud cez otvorenie
+         * dialogu, alebo vyplnenim uz otvoreneho dialogu). Ciarovy kod zo skenera
          * zacina markerom "J", takze sa da od karty odlisit este pred dekodovanim.
          */
-        function spracujNaPrihlasovacejObrazovke(raw) {
+        function prihlasKartou(raw, loginFn) {
             const surove = raw.trim();
             const decoded = decodeScannerInput(surove);
             if (surove[0] === 'J' || !CARD_FORMAT.test(decoded)) {
@@ -1355,11 +1371,25 @@
             if (prihlasujem) return; // predchadzajuci pokus este bezi
             prihlasujem = true;
             console.log(LOG, 'prihlásenie kartou:', user.username);
-            UserSwitch.fromLoginPage(user.username, user.password)
+            Promise.resolve(loginFn(user.username, user.password))
                 .finally(() => { prihlasujem = false; });
         }
 
+        function spracujNaPrihlasovacejObrazovke(raw) {
+            // login obrazovka: dialog treba najprv otvorit (Login--Link), potom vyplnit
+            prihlasKartou(raw, (u, p) => UserSwitch.fromLoginPage(u, p));
+        }
+
+        function spracujOtvorenyDialog(raw) {
+            // dialog uz otvoreny: nic neklikame, len vyplnime a odosleme
+            prihlasKartou(raw, (u, p) => UserSwitch.fillOpenDialog(u, p));
+        }
+
         function handleRawInput(raw) {
+            if (dialogOtvoreny()) {
+                spracujOtvorenyDialog(raw);
+                return;
+            }
             if (naPrihlasovacejObrazovke()) {
                 spracujNaPrihlasovacejObrazovke(raw);
                 return;
