@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PDA Suite Production (HF Slovakia)
 // @namespace    http://tampermonkey.net/pda-suite-production
-// @version      2.7.8
+// @version      2.7.10
 // @description  PDA Suite - produkcny build. Vsetkych 18 modulov v jednom subore, zapinaju sa v nastaveniach (ozubene koliesko vpravo dole).
 // @author       Gabris, Tvarozek
 // @updateURL    https://github.com/Dan1elG94/PDA-Suite/raw/refs/heads/main/production/pda-suite.user.js
@@ -344,7 +344,8 @@
         // POZOR: prvy znak sa odstrani LEN ak je to naozaj marker "J".
         // (v povodnych skriptoch sa na jednom mieste odrezaval vzdy, co
         //  rucne napisanemu cislu zjedlo prvu cislicu)
-        const stripped = raw.length > 0 && raw[0] === 'J' ? raw.slice(1) : raw;
+        // Marker berieme J aj male j - pri zapnutom Caps Lock scanner napise 'j'.
+        const stripped = raw.length > 0 && (raw[0] === 'J' || raw[0] === 'j') ? raw.slice(1) : raw;
 
         let out = '';
         for (const ch of stripped) {
@@ -453,7 +454,10 @@
                 return fillLoginPopup(username, password);
             },
             findByCardId(cardId) {
-                return settings.users.find((u) => u.cardId && u.cardId === cardId) || null;
+                // porovnanie bez ohladu na velkost pismen: pri zapnutom Caps Lock
+                // scanner/citacka preklopi hex pismena v ID karty (be8 -> BE8)
+                const id = String(cardId).toLowerCase();
+                return settings.users.find((u) => u.cardId && String(u.cardId).toLowerCase() === id) || null;
             },
         };
     })();
@@ -1357,7 +1361,7 @@
         function prihlasKartou(raw, loginFn) {
             const surove = raw.trim();
             const decoded = decodeScannerInput(surove);
-            if (surove[0] === 'J' || !CARD_FORMAT.test(decoded)) {
+            if (surove[0] === 'J' || surove[0] === 'j' || !CARD_FORMAT.test(decoded)) {
                 console.warn(LOG, 'prihlásenie: nesprávny vstup z čítačky');
                 zobrazChybuPrihlasenia('Nesprávny vstup');
                 return;
